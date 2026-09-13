@@ -3,21 +3,21 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-# --- 1. PAGE & URL QUERY PARAMETER SETUP ---
+# --- 1. PAGE CONFIGURATION & URL QUERY PARAMETERS ---
 st.set_page_config(
-    page_title="Universal Asset Advisor & Intrinsic Valuation Model",
+    page_title="Universal Ticker Advisor (UTA)",
     page_icon="⚖️",
     layout="wide"
 )
 
-# Read ticker from browser URL query parameter if available (e.g., ?ticker=VFLO)
+# Read ticker from browser URL query parameter if present (e.g., ?ticker=VFLO)
 query_params = st.query_params
 default_ticker = query_params.get("ticker", "VFLO").upper()
 
 
-# --- 2. DATA FETCHING & ASSET CALIBRATION ---
+# --- 2. DATA FETCHING & ASSET CALIBRATION ENGINE ---
 def get_calibrated_inputs(ticker_symbol: str) -> dict:
-    """Fetches ticker metadata via yfinance and derives baseline growth/metrics."""
+    """Fetches ticker metadata via yfinance and derives baseline growth & metrics."""
     ticker = yf.Ticker(ticker_symbol)
     
     try:
@@ -89,30 +89,25 @@ def get_calibrated_inputs(ticker_symbol: str) -> dict:
     }
 
 
-# --- 3. RULE ENGINE (ETF & ASSET SCORING) ---
+# --- 3. RULE EVALUATION ENGINE ---
 def evaluate_weekly_rules(data: dict, rule_weights: dict) -> tuple[float, list]:
-    """
-    Evaluates quality/technical rules against ticker metadata.
-    Returns total score (0-100) and line-item breakdown.
-    """
+    """Evaluates 10 quality/risk rules against asset metadata."""
     info = data["info"]
-    asset_class = data["asset_class"]
     results = []
     total_score = 0.0
     max_possible = sum(rule_weights.values())
 
-    # Example 10-Rule Ruleset (Tailor bounds as needed)
     rules_check = [
         ("AUM Size (> $100M)", info.get("totalAssets", 0) > 100_000_000, rule_weights["aum"]),
         ("Expense Ratio (< 0.50%)", info.get("expenseRatio", 0.003) <= 0.005, rule_weights["expense"]),
-        ("Positive 5Y Growth/Return", data["growth_rate"] > 0.02, rule_weights["growth"]),
-        ("Low Tracking Error / Beta (< 1.2)", info.get("beta", 1.0) <= 1.2 if info.get("beta") else True, rule_weights["beta"]),
-        ("Healthy Dividend/Yield", (info.get("yield") or 0) > 0.01, rule_weights["yield"]),
-        ("Active Trading Volume", info.get("volume", 500000) > 100000, rule_weights["volume"]),
-        ("P/E Value Safety (< 25x)", (info.get("trailingPE") or 20) < 25.0, rule_weights["pe_ratio"]),
-        ("Low Short Interest / Risk", info.get("shortPercentOfFloat", 0) < 0.05, rule_weights["risk"]),
-        ("52-Week Price Position (> 30% Low)", data["current_price"] > (info.get("fiftyTwoWeekLow", data["current_price"]*0.8) * 1.1), rule_weights["momentum"]),
-        ("Institutional Backing (> 20%)", info.get("heldPercentInstitutions", 0.5) > 0.2, rule_weights["inst_hold"])
+        ("Positive Trajectory (> 2% Growth)", data["growth_rate"] > 0.02, rule_weights["growth"]),
+        ("Low Volatility (Beta <= 1.2)", info.get("beta", 1.0) <= 1.2 if info.get("beta") else True, rule_weights["beta"]),
+        ("Healthy Income/Yield (> 1%)", (info.get("yield") or 0) > 0.01, rule_weights["yield"]),
+        ("Active Trading Volume (> 100k)", info.get("volume", 500000) > 100000, rule_weights["volume"]),
+        ("Valuation Safety (P/E < 25x)", (info.get("trailingPE") or 20) < 25.0, rule_weights["pe_ratio"]),
+        ("Low Short Interest Risk (< 5%)", info.get("shortPercentOfFloat", 0) < 0.05, rule_weights["risk"]),
+        ("52-Week Price Position (> 10% Low)", data["current_price"] > (info.get("fiftyTwoWeekLow", data["current_price"] * 0.8) * 1.1), rule_weights["momentum"]),
+        ("Institutional Support (> 20%)", info.get("heldPercentInstitutions", 0.5) > 0.2, rule_weights["inst_hold"])
     ]
 
     for label, passed, weight in rules_check:
@@ -129,7 +124,7 @@ def evaluate_weekly_rules(data: dict, rule_weights: dict) -> tuple[float, list]:
 
 
 # --- 4. VALUATION ENGINE ---
-def calculate_scenario_valuation(init_price, growth_rate, exit_multiple, proj_years, trailing_pe, asset_class, discount_rate=0.09):
+def calculate_scenario_valuation(init_price, growth_rate, exit_multiple, proj_years, trailing_pe, asset_class, discount_rate):
     compounded_val = init_price * ((1 + growth_rate) ** proj_years)
     
     if asset_class == "Stock" and trailing_pe:
@@ -150,8 +145,8 @@ def calculate_scenario_valuation(init_price, growth_rate, exit_multiple, proj_ye
 
 # --- 5. HYBRID DECISION ENGINE ---
 def get_unified_recommendation(rule_score: float, med_cagr: float, margin_of_safety: float) -> tuple[str, str, float]:
-    """Combines Rule Quality Score and Valuation Returns into a single decision."""
-    val_score = min(max((med_cagr / 15.0) * 100, 0), 100) # 15% CAGR = 100
+    """Blends Quality Score (40%) and Valuation CAGR (60%) into a final rating."""
+    val_score = min(max((med_cagr / 15.0) * 100, 0), 100)  # 15% CAGR maps to 100
     composite_index = (0.40 * rule_score) + (0.60 * val_score)
 
     if composite_index >= 78 and margin_of_safety >= 0:
@@ -166,63 +161,95 @@ def get_unified_recommendation(rule_score: float, med_cagr: float, margin_of_saf
         return "🔴 SELL / HIGH RISK", "error", composite_index
 
 
-# --- 6. STREAMLIT UI ---
+# --- 6. STREAMLIT APPLICATION INTERFACE ---
 
-st.title("⚖️ Universal Asset Advisor & Valuation Model")
+st.title("⚖️ Universal Ticker Advisor (UTA)")
 
-# Top Search Bar & Favorite URL Sync
-col_search, col_url = st.columns([2, 1])
+# Ticker Search & URL Parameter Sync
+ticker_input = st.text_input("Enter Ticker Symbol:", value=default_ticker).strip().upper()
 
-with col_search:
-    ticker_input = st.text_input("Enter Ticker Symbol:", value=default_ticker).strip().upper()
-
-# Sync URL query parameters so user can bookmark/favorite URL
 if ticker_input != query_params.get("ticker"):
     st.query_params["ticker"] = ticker_input
 
+# --- SIDEBAR CONFIGURATION ---
+st.sidebar.header("🌐 Macro Environment Presets")
+outlook = st.sidebar.selectbox(
+    "Select Market Outlook:",
+    options=["Neutral (Baseline)", "Bear / Defensive 🐻", "Bull / Risk-On 🐂"],
+    index=0,
+    help="Adjusts rule weights, discount rates, and growth assumptions based on macro conditions."
+)
+
+# Preset Logic
+if outlook == "Bear / Defensive 🐻":
+    default_aum, default_expense, default_growth = 10, 10, 5
+    default_beta, default_yield, default_volume = 10, 8, 8
+    default_pe, default_risk, default_momentum, default_inst = 10, 8, 2, 5
+    preset_discount_rate = 11.0
+    growth_scale = 0.70
+    multiple_scale = 0.80
+
+elif outlook == "Bull / Risk-On 🐂":
+    default_aum, default_expense, default_growth = 5, 5, 10
+    default_beta, default_yield, default_volume = 3, 2, 5
+    default_pe, default_risk, default_momentum, default_inst = 4, 3, 10, 8
+    preset_discount_rate = 8.0
+    growth_scale = 1.20
+    multiple_scale = 1.15
+
+else:  # Neutral (Baseline)
+    default_aum, default_expense, default_growth = 10, 10, 10
+    default_beta, default_yield, default_volume = 5, 5, 5
+    default_pe, default_risk, default_momentum, default_inst = 10, 5, 5, 5
+    preset_discount_rate = 9.0
+    growth_scale = 1.0
+    multiple_scale = 1.0
+
+st.sidebar.markdown("---")
+st.sidebar.header("⚙️ Weekly Rule Weights")
+
+rule_weights = {
+    "aum": st.sidebar.slider("AUM Size Weight", 0, 10, default_aum),
+    "expense": st.sidebar.slider("Expense Ratio Weight", 0, 10, default_expense),
+    "growth": st.sidebar.slider("Growth Trajectory Weight", 0, 10, default_growth),
+    "beta": st.sidebar.slider("Low Volatility Weight", 0, 10, default_beta),
+    "yield": st.sidebar.slider("Income/Yield Weight", 0, 10, default_yield),
+    "volume": st.sidebar.slider("Liquidity Weight", 0, 10, default_volume),
+    "pe_ratio": st.sidebar.slider("Valuation Multiple Weight", 0, 10, default_pe),
+    "risk": st.sidebar.slider("Short Interest Weight", 0, 10, default_risk),
+    "momentum": st.sidebar.slider("Momentum Weight", 0, 10, default_momentum),
+    "inst_hold": st.sidebar.slider("Institutional Backing Weight", 0, 10, default_inst),
+}
+
+st.sidebar.markdown("---")
+st.sidebar.header("🎯 Valuation Parameters")
+
+proj_years = st.sidebar.slider("Projection Horizon (Years)", 1, 20, 5)
+discount_rate = st.sidebar.slider("Discount Rate (%)", 4.0, 15.0, preset_discount_rate, step=0.5) / 100.0
+
+
+# --- MAIN ENGINE PROCESSING ---
 if ticker_input:
     try:
-        with st.spinner(f"Running rules engine & valuation models for {ticker_input}..."):
+        with st.spinner(f"Processing evaluation engines for {ticker_input}..."):
             data = get_calibrated_inputs(ticker_input)
 
         st.subheader(f"{data['long_name']} ({ticker_input})")
-        st.caption(f"Asset Class: **{data['asset_class']}** | Current Price: **${data['current_price']:,.2f}**")
+        st.caption(f"Asset Class: **{data['asset_class']}** | Current Price: **${data['current_price']:,.2f}** | Active Preset: **{outlook}**")
 
-        # SIDEBAR: Configurable Weekly Points & Valuation Sliders
-        st.sidebar.header("⚙️ Weekly Points Configurator")
-        st.sidebar.caption("Adjust weightings for quality rules (0–10 pts):")
-        
-        rule_weights = {
-            "aum": st.sidebar.slider("AUM Size Weight", 0, 10, 10),
-            "expense": st.sidebar.slider("Expense Ratio Weight", 0, 10, 10),
-            "growth": st.sidebar.slider("Growth Trajectory Weight", 0, 10, 10),
-            "beta": st.sidebar.slider("Volatility/Beta Weight", 0, 10, 5),
-            "yield": st.sidebar.slider("Yield Weight", 0, 10, 5),
-            "volume": st.sidebar.slider("Liquidity Weight", 0, 10, 5),
-            "pe_ratio": st.sidebar.slider("Valuation Multiple Weight", 0, 10, 10),
-            "risk": st.sidebar.slider("Short Interest Weight", 0, 10, 5),
-            "momentum": st.sidebar.slider("52-Week Trend Weight", 0, 10, 5),
-            "inst_hold": st.sidebar.slider("Institutional Support Weight", 0, 10, 5),
-        }
+        base_growth = data["growth_rate"] * growth_scale
+        base_multiple = data["exit_multiple"] * multiple_scale
 
-        st.sidebar.markdown("---")
-        st.sidebar.header("🎯 Valuation Parameters")
-        proj_years = st.sidebar.slider("Projection Horizon (Years)", 1, 20, 5)
-        discount_rate = st.sidebar.slider("Discount Rate (%)", 4.0, 15.0, 9.0, step=0.5) / 100.0
-
-        base_growth = round(data["growth_rate"] * 100, 2)
-        base_multiple = round(data["exit_multiple"], 1)
-
-        growth_low = st.sidebar.slider("Low Growth Rate (%)", -20.0, 30.0, float(round(base_growth * 0.6, 2)), step=0.5) / 100.0
-        growth_med = st.sidebar.slider("Medium Growth Rate (%)", -20.0, 40.0, float(base_growth), step=0.5) / 100.0
-        growth_high = st.sidebar.slider("High Growth Rate (%)", -20.0, 60.0, float(round(base_growth * 1.4, 2)), step=0.5) / 100.0
+        growth_low = st.sidebar.slider("Low Growth Rate (%)", -20.0, 30.0, float(round(base_growth * 0.6 * 100, 2)), step=0.5) / 100.0
+        growth_med = st.sidebar.slider("Medium Growth Rate (%)", -20.0, 40.0, float(round(base_growth * 100, 2)), step=0.5) / 100.0
+        growth_high = st.sidebar.slider("High Growth Rate (%)", -20.0, 60.0, float(round(base_growth * 1.4 * 100, 2)), step=0.5) / 100.0
 
         if data["asset_class"] == "Stock":
             mult_low = st.sidebar.slider("Low Exit P/E", 3.0, 60.0, float(round(base_multiple * 0.75, 1)), step=0.5)
-            mult_med = st.sidebar.slider("Medium Exit P/E", 3.0, 70.0, float(base_multiple), step=0.5)
+            mult_med = st.sidebar.slider("Medium Exit P/E", 3.0, 70.0, float(round(base_multiple, 1)), step=0.5)
             mult_high = st.sidebar.slider("High Exit P/E", 3.0, 80.0, float(round(base_multiple * 1.25, 1)), step=0.5)
         else:
-            mult_low = mult_med = mult_high = data["exit_multiple"]
+            mult_low = mult_med = mult_high = base_multiple
 
         # Run Engines
         rule_score, rule_breakdown = evaluate_weekly_rules(data, rule_weights)
@@ -243,18 +270,18 @@ if ticker_input:
 
         unified_signal, signal_type, composite_index = get_unified_recommendation(rule_score, med_cagr, margin_of_safety)
 
-        # EXECUTIVE TOP BAR (Unified Verdict)
+        # EXECUTIVE DASHBOARD DISPLAY
         st.write("### 🏆 Executive Decision Dashboard")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("10-Rule Quality Score", f"{rule_score} / 100")
         m2.metric("Medium Intrinsic Value", f"${med_iv:,.2f}", f"{margin_of_safety:+.1f}% Margin")
         m3.metric("Projected 5Y CAGR", f"{med_cagr:.1f}%")
-        m4.metric("Composite Index", f"{composite_index:.1f} / 100")
+        m4.metric("Composite Conviction Index", f"{composite_index:.1f} / 100")
 
         if signal_type == "success":
-            st.success(f"**Unified Recommendation:** {unified_signal} | High Quality + Strong Intrinsic Return upside.")
+            st.success(f"**Unified Recommendation:** {unified_signal} | Strong fundamental quality and valuation upside.")
         elif signal_type == "warning":
-            st.warning(f"**Unified Recommendation:** {unified_signal} | Fairly valued or quality score imposes limits.")
+            st.warning(f"**Unified Recommendation:** {unified_signal} | Fair valuation or restricted by rule penalties.")
         else:
             st.error(f"**Unified Recommendation:** {unified_signal} | Fails quality rules or lacks sufficient margin of safety.")
 
@@ -289,7 +316,7 @@ if ticker_input:
                 use_container_width=True
             )
 
-        # TRAJECTORY CHART
+        # MULTI-SCENARIO TRAJECTORY CHART
         st.subheader("📈 Multi-Scenario Trajectory")
         years_seq = list(range(0, proj_years + 1))
         chart_data = {"Year": years_seq}
@@ -313,5 +340,5 @@ if ticker_input:
         st.line_chart(pd.DataFrame(chart_data).set_index("Year"))
 
     except Exception as e:
-        st.error(f"Unable to process ticker '{ticker_input}'. Please check the symbol and try again.")
+        st.error(f"Unable to process ticker '{ticker_input}'. Please verify the symbol.")
         st.caption(f"Error details: {e}")
