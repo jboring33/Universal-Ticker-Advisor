@@ -144,14 +144,14 @@ def calculate_scenario_valuation(init_price, growth_rate, exit_multiple, proj_ye
 
 
 # --- 5. HYBRID DECISION ENGINE ---
-def get_unified_recommendation(rule_score: float, med_cagr: float, margin_of_safety: float) -> tuple[str, str, float]:
+def get_unified_recommendation(rule_score: float, active_cagr: float, margin_gap: float) -> tuple[str, str, float]:
     """Blends Quality Score (40%) and Valuation CAGR (60%) into a final rating."""
-    val_score = min(max((med_cagr / 15.0) * 100, 0), 100)  # 15% CAGR maps to 100
+    val_score = min(max((active_cagr / 15.0) * 100, 0), 100)  # 15% CAGR maps to 100
     composite_index = (0.40 * rule_score) + (0.60 * val_score)
 
-    if composite_index >= 78 and margin_of_safety >= 0:
+    if composite_index >= 78 and margin_gap >= 0:
         return "🟢 STRONG BUY", "success", composite_index
-    elif composite_index >= 65:
+    elif composite_index >= 65 and margin_gap >= 0:
         return "🟢 BUY / ACCUMULATE", "success", composite_index
     elif composite_index >= 50:
         return "🟡 HOLD / NEUTRAL", "warning", composite_index
@@ -216,7 +216,7 @@ PROFILE_HELP = {
     ),
     "Capital Preservation 🛡️": (
         "Prioritizes low-volatility, large-cap stability, high liquidity, and low short risk. "
-        "Best for conservative investors seeking drawdown protection during market highs."
+        "Anchors valuation to the Low Case intrinsic value to protect against drawdowns."
     ),
     "Dividend & Income Focus 💰": (
         "Emphasizes strong cash yield, low expense ratios, and valuation safety. "
@@ -224,7 +224,7 @@ PROFILE_HELP = {
     ),
     "Deep Value & Safety 🔍": (
         "Focuses heavily on low P/E multiples, expense efficiency, and minimal short risk. "
-        "Best for finding underpriced, mispriced, or out-of-favor assets."
+        "Demands a 15% margin of safety below baseline intrinsic value."
     ),
     "Growth & Momentum 🚀": (
         "Weights 52-week momentum trends, growth trajectory, and institutional backing. "
@@ -342,39 +342,57 @@ if ticker_input:
         else:
             mult_low = mult_med = mult_high = base_multiple
 
-        # Run Engines
+        # Run Rule Evaluation Engine
         rule_score, rule_breakdown = evaluate_weekly_rules(data, rule_weights)
         
         init_price = data["current_price"]
         trailing_pe = data["trailing_pe"]
         asset_class = data["asset_class"]
 
+        # Run Scenario Valuation Engine
         scenarios = {
             "Low Case": calculate_scenario_valuation(init_price, growth_low, mult_low, proj_years, trailing_pe, asset_class, discount_rate),
             "Medium (Base)": calculate_scenario_valuation(init_price, growth_med, mult_med, proj_years, trailing_pe, asset_class, discount_rate),
             "High Case": calculate_scenario_valuation(init_price, growth_high, mult_high, proj_years, trailing_pe, asset_class, discount_rate)
         }
 
-        med_iv = scenarios["Medium (Base)"]["intrinsic_value"]
-        med_cagr = scenarios["Medium (Base)"]["cagr"]
-        margin_of_safety = ((med_iv - init_price) / init_price) * 100
+        # DYNAMIC VALUATION ANCHORING BASED ON STRATEGY PROFILE
+        if rule_preset == "Capital Preservation 🛡️":
+            anchor_key = "Low Case"
+            anchor_label = "Low Case Intrinsic Value (Defensive)"
+            required_margin_pct = 5.0  # Requires price to be 5% below Low Case for Buy
+        elif rule_preset == "Deep Value & Safety 🔍":
+            anchor_key = "Medium (Base)"
+            anchor_label = "Medium Intrinsic Value (Value Focus)"
+            required_margin_pct = 15.0  # Requires 15% discount to Base Case
+        else:
+            anchor_key = "Medium (Base)"
+            anchor_label = "Medium Intrinsic Value"
+            required_margin_pct = 0.0
 
-        unified_signal, signal_type, composite_index = get_unified_recommendation(rule_score, med_cagr, margin_of_safety)
+        active_iv = scenarios[anchor_key]["intrinsic_value"]
+        active_cagr = scenarios[anchor_key]["cagr"]
+        raw_margin_of_safety = ((active_iv - init_price) / init_price) * 100
+        margin_gap = raw_margin_of_safety - required_margin_pct
+
+        unified_signal, signal_type, composite_index = get_unified_recommendation(
+            rule_score, active_cagr, margin_gap
+        )
 
         # EXECUTIVE DASHBOARD DISPLAY
         st.write("### 🏆 Executive Decision Dashboard")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("10-Rule Quality Score", f"{rule_score} / 100")
-        m2.metric("Medium Intrinsic Value", f"${med_iv:,.2f}", f"{margin_of_safety:+.1f}% Margin")
-        m3.metric("Projected 5Y CAGR", f"{med_cagr:.1f}%")
+        m2.metric(f"{anchor_label}", f"${active_iv:,.2f}", f"{raw_margin_of_safety:+.1f}% Margin")
+        m3.metric(f"Projected {proj_years}Y CAGR", f"{active_cagr:.1f}%")
         m4.metric("Composite Conviction Index", f"{composite_index:.1f} / 100")
 
         if signal_type == "success":
-            st.success(f"**Unified Recommendation:** {unified_signal} | Strong fundamental quality and valuation upside.")
+            st.success(f"**Unified Recommendation:** {unified_signal} | Meets fundamental quality and valuation margin criteria.")
         elif signal_type == "warning":
-            st.warning(f"**Unified Recommendation:** {unified_signal} | Fair valuation or restricted by rule penalties.")
+            st.warning(f"**Unified Recommendation:** {unified_signal} | Fair valuation or limited margin of safety.")
         else:
-            st.error(f"**Unified Recommendation:** {unified_signal} | Fails quality rules or lacks sufficient margin of safety.")
+            st.error(f"**Unified Recommendation:** {unified_signal} | Fails quality rules or lacks required safety margin.")
 
         st.divider()
 
