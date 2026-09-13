@@ -208,20 +208,68 @@ else:  # Neutral (Baseline)
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Strategy Profile Presets")
 
+# Fly-over Tooltips Dictionary
+PROFILE_HELP = {
+    "Macro Alignment (Default)": (
+        "Synchronizes weights directly with your chosen Macro Outlook. "
+        "Best for general analysis aligned with prevailing market conditions."
+    ),
+    "Capital Preservation 🛡️": (
+        "Prioritizes low-volatility, large-cap stability, high liquidity, and low short risk. "
+        "Best for conservative investors seeking drawdown protection during market highs."
+    ),
+    "Dividend & Income Focus 💰": (
+        "Emphasizes strong cash yield, low expense ratios, and valuation safety. "
+        "Best for income-focused portfolios prioritizing steady cash flow."
+    ),
+    "Deep Value & Safety 🔍": (
+        "Focuses heavily on low P/E multiples, expense efficiency, and minimal short risk. "
+        "Best for finding underpriced, mispriced, or out-of-favor assets."
+    ),
+    "Growth & Momentum 🚀": (
+        "Weights 52-week momentum trends, growth trajectory, and institutional backing. "
+        "Best for bull markets and aggressive capital appreciation strategies."
+    )
+}
+
+# Interactive Decision Assistant Expander
+with st.sidebar.expander("💡 Help Me Choose a Strategy"):
+    st.markdown("**Quick Selector Guide:**")
+    investment_goal = st.radio(
+        "What is your primary investment goal?",
+        options=[
+            "Protect Capital (Conservative)",
+            "Generate Cash Flow / Yield",
+            "Bargain Hunting / Value",
+            "Maximize Growth & Momentum"
+        ],
+        index=0
+    )
+    
+    if "Protect Capital" in investment_goal:
+        recommended_profile = "Capital Preservation 🛡️"
+    elif "Generate Cash Flow" in investment_goal:
+        recommended_profile = "Dividend & Income Focus 💰"
+    elif "Bargain Hunting" in investment_goal:
+        recommended_profile = "Deep Value & Safety 🔍"
+    else:
+        recommended_profile = "Growth & Momentum 🚀"
+        
+    st.info(f"**Recommended Profile:**\n\n`{recommended_profile}`")
+
+profile_options = list(PROFILE_HELP.keys())
+default_index = profile_options.index(recommended_profile) if 'recommended_profile' in locals() else 0
+
 rule_preset = st.sidebar.selectbox(
     "Select Strategy Profile:",
-    options=[
-        "Macro Alignment (Default)",
-        "Capital Preservation 🛡️",
-        "Dividend & Income Focus 💰",
-        "Deep Value & Safety 🔍",
-        "Growth & Momentum 🚀"
-    ],
-    index=0,
-    help="Pre-fills rule weight sliders for specific investment styles."
+    options=profile_options,
+    index=default_index,
+    help="Select a profile to pre-fill rule weights based on your investment strategy."
 )
 
-# 2. Strategy Weight Presets
+st.sidebar.caption(f"ℹ️ **Profile Focus:** {PROFILE_HELP[rule_preset]}")
+
+# 2. Strategy Weight Presets Mapping
 if rule_preset == "Capital Preservation 🛡️":
     w_aum, w_exp, w_growth = 10, 10, 3
     w_beta, w_yield, w_vol = 10, 6, 10
@@ -242,7 +290,7 @@ elif rule_preset == "Growth & Momentum 🚀":
     w_beta, w_yield, w_vol = 2, 1, 5
     w_pe, w_risk, w_mom, w_inst = 3, 4, 10, 8
 
-else:  # Macro Alignment Default
+else:  # Macro Alignment (Default)
     w_aum, w_exp, w_growth = default_aum, default_expense, default_growth
     w_beta, w_yield, w_vol = default_beta, default_yield, default_volume
     w_pe, w_risk, w_mom, w_inst = default_pe, default_risk, default_momentum, default_inst
