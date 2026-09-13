@@ -177,10 +177,10 @@ outlook = st.sidebar.selectbox(
     "Select Market Outlook:",
     options=["Neutral (Baseline)", "Bear / Defensive 🐻", "Bull / Risk-On 🐂"],
     index=0,
-    help="Adjusts rule weights, discount rates, and growth assumptions based on macro conditions."
+    help="Adjusts discount rates, valuation haircuts, and baseline rule defaults based on macro conditions."
 )
 
-# Preset Logic
+# 1. Macro Outlook Preset Calibration
 if outlook == "Bear / Defensive 🐻":
     default_aum, default_expense, default_growth = 10, 10, 5
     default_beta, default_yield, default_volume = 10, 8, 8
@@ -206,19 +206,59 @@ else:  # Neutral (Baseline)
     multiple_scale = 1.0
 
 st.sidebar.markdown("---")
-st.sidebar.header("⚙️ Weekly Rule Weights")
+st.sidebar.header("⚙️ Strategy Profile Presets")
 
+rule_preset = st.sidebar.selectbox(
+    "Select Strategy Profile:",
+    options=[
+        "Macro Alignment (Default)",
+        "Capital Preservation 🛡️",
+        "Dividend & Income Focus 💰",
+        "Deep Value & Safety 🔍",
+        "Growth & Momentum 🚀"
+    ],
+    index=0,
+    help="Pre-fills rule weight sliders for specific investment styles."
+)
+
+# 2. Strategy Weight Presets
+if rule_preset == "Capital Preservation 🛡️":
+    w_aum, w_exp, w_growth = 10, 10, 3
+    w_beta, w_yield, w_vol = 10, 6, 10
+    w_pe, w_risk, w_mom, w_inst = 8, 10, 2, 6
+
+elif rule_preset == "Dividend & Income Focus 💰":
+    w_aum, w_exp, w_growth = 8, 10, 4
+    w_beta, w_yield, w_vol = 8, 10, 6
+    w_pe, w_risk, w_mom, w_inst = 8, 6, 2, 4
+
+elif rule_preset == "Deep Value & Safety 🔍":
+    w_aum, w_exp, w_growth = 6, 8, 5
+    w_beta, w_yield, w_vol = 6, 6, 6
+    w_pe, w_risk, w_mom, w_inst = 10, 10, 3, 5
+
+elif rule_preset == "Growth & Momentum 🚀":
+    w_aum, w_exp, w_growth = 4, 4, 10
+    w_beta, w_yield, w_vol = 2, 1, 5
+    w_pe, w_risk, w_mom, w_inst = 3, 4, 10, 8
+
+else:  # Macro Alignment Default
+    w_aum, w_exp, w_growth = default_aum, default_expense, default_growth
+    w_beta, w_yield, w_vol = default_beta, default_yield, default_volume
+    w_pe, w_risk, w_mom, w_inst = default_pe, default_risk, default_momentum, default_inst
+
+# Rule Weight Sliders
 rule_weights = {
-    "aum": st.sidebar.slider("AUM Size Weight", 0, 10, default_aum),
-    "expense": st.sidebar.slider("Expense Ratio Weight", 0, 10, default_expense),
-    "growth": st.sidebar.slider("Growth Trajectory Weight", 0, 10, default_growth),
-    "beta": st.sidebar.slider("Low Volatility Weight", 0, 10, default_beta),
-    "yield": st.sidebar.slider("Income/Yield Weight", 0, 10, default_yield),
-    "volume": st.sidebar.slider("Liquidity Weight", 0, 10, default_volume),
-    "pe_ratio": st.sidebar.slider("Valuation Multiple Weight", 0, 10, default_pe),
-    "risk": st.sidebar.slider("Short Interest Weight", 0, 10, default_risk),
-    "momentum": st.sidebar.slider("Momentum Weight", 0, 10, default_momentum),
-    "inst_hold": st.sidebar.slider("Institutional Backing Weight", 0, 10, default_inst),
+    "aum": st.sidebar.slider("AUM Size Weight", 0, 10, w_aum),
+    "expense": st.sidebar.slider("Expense Ratio Weight", 0, 10, w_exp),
+    "growth": st.sidebar.slider("Growth Trajectory Weight", 0, 10, w_growth),
+    "beta": st.sidebar.slider("Low Volatility Weight", 0, 10, w_beta),
+    "yield": st.sidebar.slider("Income/Yield Weight", 0, 10, w_yield),
+    "volume": st.sidebar.slider("Liquidity Weight", 0, 10, w_vol),
+    "pe_ratio": st.sidebar.slider("Valuation Multiple Weight", 0, 10, w_pe),
+    "risk": st.sidebar.slider("Short Interest Weight", 0, 10, w_risk),
+    "momentum": st.sidebar.slider("Momentum Weight", 0, 10, w_mom),
+    "inst_hold": st.sidebar.slider("Institutional Backing Weight", 0, 10, w_inst),
 }
 
 st.sidebar.markdown("---")
@@ -235,7 +275,10 @@ if ticker_input:
             data = get_calibrated_inputs(ticker_input)
 
         st.subheader(f"{data['long_name']} ({ticker_input})")
-        st.caption(f"Asset Class: **{data['asset_class']}** | Current Price: **${data['current_price']:,.2f}** | Active Preset: **{outlook}**")
+        st.caption(
+            f"Asset Class: **{data['asset_class']}** | Current Price: **${data['current_price']:,.2f}** | "
+            f"Macro Outlook: **{outlook}** | Strategy Profile: **{rule_preset}**"
+        )
 
         base_growth = data["growth_rate"] * growth_scale
         base_multiple = data["exit_multiple"] * multiple_scale
